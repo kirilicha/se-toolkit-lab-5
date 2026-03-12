@@ -1,81 +1,82 @@
-import { useState, useEffect, useReducer, FormEvent } from 'react'
-import './App.css'
+import { useEffect, useState, FormEvent } from "react";
+import "./App.css";
+import { Dashboard, ScoreBucket } from "./Dashboard";
 
-const STORAGE_KEY = 'api_key'
+const STORAGE_KEY = "api_token";
 
 interface Item {
-  id: number
-  type: string
-  title: string
-  created_at: string
+  id: number;
+  title: string;
+  type: string;
+  parent_id: number | null;
+  created_at: string;
+  description: string | null;
 }
 
-type FetchState =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'success'; items: Item[] }
-  | { status: 'error'; message: string }
-
-type FetchAction =
-  | { type: 'fetch_start' }
-  | { type: 'fetch_success'; data: Item[] }
-  | { type: 'fetch_error'; message: string }
-
-function fetchReducer(_state: FetchState, action: FetchAction): FetchState {
-  switch (action.type) {
-    case 'fetch_start':
-      return { status: 'loading' }
-    case 'fetch_success':
-      return { status: 'success', items: action.data }
-    case 'fetch_error':
-      return { status: 'error', message: action.message }
-  }
-}
+type Page = "items" | "dashboard";
 
 function App() {
-  const [token, setToken] = useState(
-    () => localStorage.getItem(STORAGE_KEY) ?? '',
-  )
-  const [draft, setDraft] = useState('')
-  const [fetchState, dispatch] = useReducer(fetchReducer, { status: 'idle' })
+  const [token, setToken] = useState(() => localStorage.getItem(STORAGE_KEY) ?? "");
+  const [draft, setDraft] = useState("");
+  const [items, setItems] = useState<Item[]>([]);
+  const [scores, setScores] = useState<ScoreBucket[]>([]);
+  const [page, setPage] = useState<Page>("items");
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token) return
+    if (!token) return;
 
-    dispatch({ type: 'fetch_start' })
+    setLoading(true);
+    setError(null);
 
-    fetch('/items/', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    fetch("/items", { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json()
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
       })
-      .then((data: Item[]) => dispatch({ type: 'fetch_success', data }))
-      .catch((err: Error) =>
-        dispatch({ type: 'fetch_error', message: err.message }),
-      )
-  }, [token])
+      .then((data: Item[]) => {
+        setItems(data);
+        setLoading(false);
+      })
+      .catch((err: Error) => {
+        setError(err.message);
+        setLoading(false);
+      });
+
+    fetch("/analytics/scores?lab=lab-04", { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((data: ScoreBucket[]) => setScores(data))
+      .catch(() => {});
+  }, [token]);
 
   function handleConnect(e: FormEvent) {
-    e.preventDefault()
-    const trimmed = draft.trim()
-    if (!trimmed) return
-    localStorage.setItem(STORAGE_KEY, trimmed)
-    setToken(trimmed)
+    e.preventDefault();
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    localStorage.setItem(STORAGE_KEY, trimmed);
+    setToken(trimmed);
   }
 
   function handleDisconnect() {
-    localStorage.removeItem(STORAGE_KEY)
-    setToken('')
-    setDraft('')
+    localStorage.removeItem(STORAGE_KEY);
+    setToken("");
+    setDraft("");
+    setItems([]);
+    setScores([]);
+    setError(null);
+    setPage("items");
   }
 
   if (!token) {
     return (
       <form className="token-form" onSubmit={handleConnect}>
-        <h1>API Key</h1>
-        <p>Enter your API key to connect.</p>
+        <h1>API Token</h1>
+        <p>Enter your API token to connect.</p>
         <input
           type="password"
           placeholder="Token"
@@ -84,45 +85,53 @@ function App() {
         />
         <button type="submit">Connect</button>
       </form>
-    )
+    );
   }
 
   return (
     <div>
       <header className="app-header">
-        <h1>Items</h1>
-        <button className="btn-disconnect" onClick={handleDisconnect}>
-          Disconnect
-        </button>
+        <h1>{page === "items" ? "Items" : "Dashboard"}</h1>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => setPage("items")}>Items</button>
+          <button onClick={() => setPage("dashboard")}>Dashboard</button>
+          <button className="btn-disconnect" onClick={handleDisconnect}>
+            Disconnect
+          </button>
+        </div>
       </header>
 
-      {fetchState.status === 'loading' && <p>Loading...</p>}
-      {fetchState.status === 'error' && <p>Error: {fetchState.message}</p>}
+      {loading && <p>Loading...</p>}
+      {error && <p>Error: {error}</p>}
 
-      {fetchState.status === 'success' && (
+      {page === "dashboard" && <Dashboard scores={scores} />}
+
+      {page === "items" && !loading && !error && (
         <table>
           <thead>
             <tr>
               <th>ID</th>
-              <th>ItemType</th>
+              <th>Type</th>
               <th>Title</th>
               <th>Created at</th>
+              <th>Description</th>
             </tr>
           </thead>
           <tbody>
-            {fetchState.items.map((item) => (
+            {items.map((item) => (
               <tr key={item.id}>
                 <td>{item.id}</td>
                 <td>{item.type}</td>
                 <td>{item.title}</td>
                 <td>{item.created_at}</td>
+                <td>{item.description ?? ""}</td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
